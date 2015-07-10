@@ -31,26 +31,26 @@ class MPIGrid {
 
 };
 
-void MPIGrid :: pack(double * data, double * pack, int count, int block_length, int stride)
+void MPIGrid :: pack(double * data, double * packed_data, int count, int block_length, int stride)
 {
     size_t num = block_length * sizeof(MPIGrid_type);
 
     for (int i=0; i<count; i++)
     {
-        void * source = (void *) &(data[stride*i]);
-        void * destination = (void *) &(pack[i*block_length]);
+        void * source = (void *) (data + i*stride);
+        void * destination = (void *) (packed_data + i*block_length);
         memcpy(destination, source, num);
     }
 }
 
-void MPIGrid :: unpack(double * data, double * pack, int count, int block_length, int stride)
+void MPIGrid :: unpack(double * data, double * packed_data, int count, int block_length, int stride)
 {
     size_t num = block_length * sizeof(double);
 
     for (int i=0; i<count; i++)
     {
-        void * source = (void *) &(pack[i*block_length]);
-        void * destination = (void *) &(data[stride*i]);
+        void * source = (void *) (packed_data + i*block_length);
+        void * destination = (void *) (data + i*stride);
         memcpy(destination, source, num);
     }
 
@@ -132,43 +132,35 @@ int MPIGrid :: scatter(double * global_data, double * local_data)
     int offset;
     
     int subdomain[m_ndims];
-    int np_stride[m_ndims];
-    int block_stride[m_ndims];
-    int local_stride[m_ndims];
+    int subdomain_volume;
+    int coord_stride[m_ndims];
 
     // calculate extents of subdomains
+    subdomain_volume = 1;
     for (int i=0; i<m_ndims; i++)
+    {
         subdomain[i] = m_global_dims[i] / m_np_dims[i];
-
-    // calculate number of pack units
-    for (int i=0; i<m_ndims; i++)
-    {
-        count = 1;
-        for (int j=0; j<i; j++)
-            count *= subdomain[j] ;
+        subdomain_volume *= subdomain[i];
     }
 
-    block_length = subdomain[m_ndims-1];
-    stride = m_global_dims[m_ndims-1];
+    // calculate number of contiguous chunks
+    count = 1;
+    for (int i=0; i<m_ndims-1; i++) count *= subdomain[i];
 
-    // np_stride and block_stride are use to calculate offsets
-    for (int i=0; i<m_ndims; i++)
-    {
-        np_stride[i] = 1;
-        block_stride[i] = subdomain[i];
-        local_stride[i] = 1;
-        for (int j=i+1; j<m_ndims; j++)
-        {
-            local_stride[i] *= m_local_dims[j];
-            np_stride[i] *= m_np_dims[j];
-            block_stride[i] *= subdomain[j];
-        }
-    }
+    double * packed_data = (double *) malloc(sizeof(double)*subdomain_volume);
 
-    double * packed_data = (double *) malloc(sizeof(double)*block_stride[m_ndims-1]);
-
-    /*============== master sends data ============= */
+    /* ============== master sends data ============= */
     if (m_rank == 0) {
+
+        for (int i=0; i<m_ndims; i++)
+        {
+            coord_stride[i] = subdomain[i];
+            for (int j=i+1; j<m_ndims; j++)
+                coord_stride[i] *= m_np_dims[j]*subdomain[j];
+        }
+
+        block_length = subdomain[m_ndims-1];
+        stride = m_global_dims[m_ndims-1];
 
         for (int id=0; id<m_np; id++) {
 
@@ -177,23 +169,28 @@ int MPIGrid :: scatter(double * global_data, double * local_data)
 
             // calculate subdomain offset
             offset = 0;
-            for (int i=0; i<m_ndims; i++)
-                offset += coords[i] * np_stride[i] * block_stride[i];
-
+            for (int i=0; i<m_ndims; i++) offset += coords[i] * coord_stride[i];
 
             pack(global_data+offset, packed_data, count, block_length, stride);
-            MPI_Isend(packed_data, block_stride[m_ndims-1], MPI_DOUBLE, id, tag, topology, &request);
+            MPI_Isend(packed_data, subdomain_volume, MPI_DOUBLE, id, tag, topology, &request);
         }
     }
 
-    /*============== everyone receives data ============= */
-    MPI_Recv(packed_data, block_stride[m_ndims-1], MPI_DOUBLE, source, tag, topology, &status);
+    /* ============== everyone receives data ============= */
 
     offset = 0;
     for (int i=0; i<m_ndims; i++)
-        offset += local_stride[i]*MPIGRID_NROWS;
+    {
+        int local_stride_i = 1;
+        for (int j=i+1; j<m_ndims; j++)
+            local_stride_i *= m_local_dims[j];
+        offset += local_stride_i*MPIGRID_NROWS;
+    }
 
+    block_length = subdomain[m_ndims-1];
     stride = m_local_dims[m_ndims-1];
+
+    MPI_Recv(packed_data, subdomain_volume, MPI_DOUBLE, source, tag, topology, &status);
     unpack(local_data+offset, packed_data, count, block_length, stride);
 
     free(packed_data);
