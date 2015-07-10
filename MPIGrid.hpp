@@ -133,7 +133,6 @@ int MPIGrid :: scatter(double * global_data, double * local_data)
     
     int subdomain[m_ndims];
     int subdomain_volume;
-    int coord_stride[m_ndims];
 
     // calculate extents of subdomains
     subdomain_volume = 1;
@@ -152,6 +151,7 @@ int MPIGrid :: scatter(double * global_data, double * local_data)
     /* ============== master sends data ============= */
     if (m_rank == 0) {
 
+        int coord_stride[m_ndims];
         for (int i=0; i<m_ndims; i++)
         {
             coord_stride[i] = subdomain[i];
@@ -192,6 +192,85 @@ int MPIGrid :: scatter(double * global_data, double * local_data)
 
     MPI_Recv(packed_data, subdomain_volume, MPI_DOUBLE, source, tag, topology, &status);
     unpack(local_data+offset, packed_data, count, block_length, stride);
+
+    free(packed_data);
+
+    return 0;
+}
+
+int MPIGrid :: gather(double * global_data, double * local_data)
+{
+
+    MPI_Request request;
+    MPI_Status status;
+
+    int tag = 1;
+    int destination = 0;
+    int count;
+    int block_length;
+    int stride;
+    int offset;
+
+    int subdomain[m_ndims];
+    int subdomain_volume;
+
+    subdomain_volume = 1;
+    for (int i=0; i<m_ndims; i++)
+    {
+        subdomain[i] = m_global_dims[i] / m_np_dims[i];
+        subdomain_volume *= subdomain[i];
+    }
+
+    count = 1;
+    for (int i=0; i<m_ndims-1; i++) count *= subdomain[i];
+
+    block_length = subdomain[m_ndims-1];
+    stride = m_local_dims[m_ndims-1];
+
+    offset = 0;
+    for (int i=0; i<m_ndims; i++)
+    {
+        int local_stride_i = 1;
+        for (int j=i+1; j<m_ndims; j++)
+            local_stride_i *= m_local_dims[j];
+        offset += local_stride_i*MPIGRID_NROWS;
+    }
+
+    double * packed_data = (double *) malloc(sizeof(double)*subdomain_volume);
+
+    /* ====================== EVERY PROCESS SENDS DATA ========================== */
+    pack(local_data + offset, packed_data, count, block_length, stride);
+    MPI_Isend(packed_data, subdomain_volume, MPI_DOUBLE, destination, tag, topology, &request);
+
+    /* ====================== MASTER RECEIVES DATA ========================== */
+    if (m_rank == 0) {
+
+        int coord_stride[m_ndims];
+
+        for (int i=0; i<m_ndims; i++)
+        {
+            coord_stride[i] = subdomain[i];
+            for (int j=i+1; j<m_ndims; j++)
+                coord_stride[i] *= m_np_dims[j]*subdomain[j];
+        }
+
+        for (int id=0; id<m_np; id++) {
+            int coords[m_ndims];
+            MPI_Cart_coords(topology, id, m_ndims, coords);
+
+            offset = 0;
+            for (int i=0; i<m_ndims; i++) offset += coords[i] * coord_stride[i];
+
+            stride = m_global_dims[m_ndims-1];
+
+            MPI_Recv(packed_data, subdomain_volume, MPI_DOUBLE, id, tag, topology, &status);
+            unpack(global_data+offset, packed_data, count, block_length, stride);
+        }
+
+    }
+
+    // must wait for master to finish recieving before free'ing packaged data
+    MPI_Barrier(topology);
 
     free(packed_data);
 
