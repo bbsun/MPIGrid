@@ -19,8 +19,8 @@ class MPIGrid {
 
         MPI_Comm topology;
 
-        void pack(double * data, double * pack, int count, int block_length, int stride);
-        void unpack(double * data, double * pack, int count, int block_length, int stride);
+        void pack(double * data, double * packed_data, int count, int block_length, int stride);
+        void unpack(double * data, double * packed_data, int count, int block_length, int stride);
 
     public:
 
@@ -33,7 +33,7 @@ class MPIGrid {
 
 void MPIGrid :: pack(double * data, double * packed_data, int count, int block_length, int stride)
 {
-    size_t num = block_length * sizeof(MPIGrid_type);
+    size_t num = block_length * sizeof(double);
 
     for (int i=0; i<count; i++)
     {
@@ -97,8 +97,8 @@ int MPIGrid :: setup(MPI_Comm comm_old, int * global_dims, int * local_dims, int
 
     // create a cartesian topology
     for (int i=0; i<ndims; i++) periodic[i] = 1;
-    MPI_Cart_create(comm_old, ndims, np_dims, periodic, 0, &topology);
 
+    MPI_Cart_create(comm_old, ndims, np_dims, periodic, 0, &topology);
     MPI_Comm_rank(topology, &m_rank);
 
     m_ndims = ndims;
@@ -277,4 +277,73 @@ int MPIGrid :: gather(double * global_data, double * local_data)
     return 0;
 }
 
+int MPIGrid :: share(double * local_data)
+{
+
+    for (int i=0; i<m_ndims; i++)
+    {
+        int tag = 1;
+        int source, destination;
+        MPI_Status status;
+
+        int count = 1;
+        int block_length = MPIGRID_NROWS;
+        int stride = 1;
+        int step = 1;
+
+        int send_offset;
+        int recv_offset;
+
+        for (int j=0; j<i; j++)
+            count *= m_local_dims[j];
+
+        for (int j=i+1; j<m_ndims; j++)
+            block_length *= m_local_dims[j];
+
+        for (int j=i; j<m_ndims; j++)
+            stride *= m_local_dims[j];
+
+        for (int j=i+1; j<m_ndims; j++)
+            step *= m_local_dims[j];
+
+        double * packed_send = (double *) malloc(sizeof(double)*count*block_length);
+        double * packed_recv = (double *) malloc(sizeof(double)*count*block_length);
+
+        /* =========== SENDRECV POSITIVE DIRECTION =================== */
+
+        send_offset = (m_local_dims[i] - 2*MPIGRID_NROWS) * step; 
+        recv_offset = 0;
+
+        pack(local_data+send_offset, packed_send, count, block_length, stride);
+
+        MPI_Cart_shift(topology, i, 1, &source, &destination);
+
+        MPI_Sendrecv(packed_send, count*block_length, MPI_DOUBLE, destination, tag,
+                     packed_recv, count*block_length, MPI_DOUBLE, source, tag,
+                     topology, &status);
+
+        unpack(local_data+recv_offset, packed_recv, count, block_length, stride);
+
+        /* =========== SENDRECV NEGATIVE DIRECTION =================== */
+
+        send_offset = MPIGRID_NROWS * step; 
+        recv_offset = (m_local_dims[i] - MPIGRID_NROWS) * step;
+
+        pack(local_data+send_offset, packed_send, count, block_length, stride);
+
+        MPI_Cart_shift(topology, i, -1, &source, &destination);
+
+        MPI_Sendrecv(packed_send, count*block_length, MPI_DOUBLE, destination, tag,
+                     packed_recv, count*block_length, MPI_DOUBLE, source, tag,
+                     topology, &status);
+
+        unpack(local_data+recv_offset, packed_recv, count, block_length, stride);
+
+        free(packed_send);
+        free(packed_recv);
+    }
+
+    return 0;
+
+}
 
