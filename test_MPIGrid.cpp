@@ -5,13 +5,33 @@
 #include "assert.h"
 #include <iomanip>
 
-/*
+
+void print_grid(double * data, int * dims)
+{
+    for (int i=0; i<dims[0]; i++)
+    {
+        if (i==1 || i== dims[0]-1 ) 
+            for (int j=0; j<dims[1]; j++)
+                std::cout << std::setw(4) << "----" << " ";
+        std::cout << std::endl;
+
+        for (int j=0; j<dims[1]; j++)
+        {
+            if (j==1 || j==dims[1]-1) std::cout << "|";
+            else std::cout << " ";
+            int ind = i*dims[1] + j;
+            std::cout << std::setw(3) << data[ind] << " ";
+        }
+        std::cout << std::endl;
+    }
+}
+
 TEST(MPIGridTest, Scatter_1D)
 {
     int ndims = 1;
     int global_dims[ndims];
-    int local_dims[ndims];
     int np_dims[ndims];
+    int alloc_local;
 
     int rank;
     int np;
@@ -22,28 +42,27 @@ TEST(MPIGridTest, Scatter_1D)
     np_dims[0] = np;
 
     MPIGrid grid;
-    int err = grid.setup(MPI_COMM_WORLD, global_dims, local_dims, np_dims, ndims);
+    int err = grid.setup(MPI_COMM_WORLD, global_dims, np_dims, ndims, 1, alloc_local);
     ASSERT_EQ(err, 0);
 
     double * global_data = (double *) malloc(sizeof(double)*global_dims[0]);
-    double * local_data = (double *) malloc(sizeof(double)*local_dims[0]);
+    double * local_data = (double *) malloc(sizeof(double)*alloc_local);
 
     for (int i=0; i<global_dims[0]; i++)
         global_data[i] = i+1;
 
     grid.scatter(global_data, local_data);
 
-    for (int i=1; i<local_dims[0]-1; i++)
+    for (int i=1; i<alloc_local-1; i++)
         EXPECT_EQ(local_data[i], rank*global_dims[0]/np + i);
 }
-*/
 
 TEST(MPIGridTest, Share_2D)
 {
     int ndims = 2;
     int global_dims[ndims];
-    int local_dims[ndims];
     int np_dims[ndims];
+    int alloc_local;
 
     global_dims[0] = 4;
     global_dims[1] = 6;
@@ -54,17 +73,17 @@ TEST(MPIGridTest, Share_2D)
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
     MPIGrid grid;
-    int err = grid.setup(MPI_COMM_WORLD, global_dims, local_dims, np_dims, ndims);
+    int err = grid.setup(MPI_COMM_WORLD, global_dims, np_dims, ndims, 1, alloc_local);
     ASSERT_EQ(err, 0);
 
     double * global_data = (double *) malloc(sizeof(double)*global_dims[0]*global_dims[1]);
-    double * local_data = (double *) malloc(sizeof(double)*local_dims[0]*local_dims[1]);
+    double * local_data = (double *) malloc(sizeof(double)*alloc_local);
     double * gathered_data = (double *) malloc(sizeof(double)*global_dims[0]*global_dims[1]);
 
     if (rank==0)
     for (int i=0; i<global_dims[0]*global_dims[1]; i++) global_data[i] = i+1;
 
-    for (int i=0; i<local_dims[0]*local_dims[1]; i++) local_data[i] = -1;
+    for (int i=0; i<alloc_local; i++) local_data[i] = -1;
 
     err = grid.scatter(global_data, local_data);
     ASSERT_EQ(err, 0);
@@ -94,8 +113,10 @@ TEST(MPIGridTest, Share_2D)
     err = grid.gather(gathered_data, local_data);
     ASSERT_EQ(err, 0);
 
+    if (rank==0) {
     for (int i=0; i<global_dims[0]*global_dims[1]; i++)
         EXPECT_EQ(gathered_data[i], global_data[i]);
+    }
 
     free(global_data);
     free(local_data);
@@ -106,8 +127,8 @@ TEST(MPIGridTest, Scatter_2D)
 {
     int ndims = 2;
     int global_dims[ndims];
-    int local_dims[ndims];
     int np_dims[ndims];
+    int alloc_local;
 
     int rank;
     int np;
@@ -119,17 +140,17 @@ TEST(MPIGridTest, Scatter_2D)
     np_dims[1] = 2;
 
     MPIGrid grid;
-    int err = grid.setup(MPI_COMM_WORLD, global_dims, local_dims, np_dims, ndims);
+    int err = grid.setup(MPI_COMM_WORLD, global_dims, np_dims, ndims, 1, alloc_local);
     ASSERT_EQ(err, 0);
 
     double * global_data = (double *) malloc(sizeof(double)*global_dims[0]*global_dims[1]);
-    double * local_data = (double *) malloc(sizeof(double)*local_dims[0]*local_dims[1]);
+    double * local_data = (double *) malloc(sizeof(double)*alloc_local);
     double * gathered_data = (double *) malloc(sizeof(double)*global_dims[0]*global_dims[1]);
 
     if (rank==0)
     for (int i=0; i<global_dims[0]*global_dims[1]; i++) global_data[i] = i+1;
 
-    for (int i=0; i<local_dims[0]*local_dims[1]; i++) local_data[i] = -1;
+    for (int i=0; i<alloc_local; i++) local_data[i] = -1;
 
     err = grid.scatter(global_data, local_data);
     ASSERT_EQ(err, 0);
@@ -195,13 +216,13 @@ int main(int argc, char ** argv)
         std::cout << std::setw(4) << "----" << " ";
         std::cout << std::endl;
 
-    for (int j=0; j<local_dims[1]; j++)
-    {
-        if (j==MPIGRID_NROWS || j==local_dims[1]-MPIGRID_NROWS) std::cout << "|";
-        else std::cout << " ";
-        int ind = i*local_dims[1] + j;
-        std::cout << std::setw(3) << local_data[ind] << " ";
-    }
+        for (int j=0; j<local_dims[1]; j++)
+        {
+            if (j==MPIGRID_NROWS || j==local_dims[1]-MPIGRID_NROWS) std::cout << "|";
+            else std::cout << " ";
+            int ind = i*local_dims[1] + j;
+            std::cout << std::setw(3) << local_data[ind] << " ";
+        }
         std::cout << std::endl;
     }
 

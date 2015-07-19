@@ -3,9 +3,6 @@
 
 #include "mpi.h"
 
-#define MPIGrid_type double
-#define MPIGRID_NROWS 1
-
 class MPIGrid {
 
     private:
@@ -13,27 +10,63 @@ class MPIGrid {
         int m_np;
         int m_rank;
         int m_ndims;
+        int m_nrows;
         int * m_local_dims;
         int * m_global_dims;
         int * m_np_dims;
 
         MPI_Comm topology;
 
-        void pack(double * data, double * packed_data, int count, int block_length, int stride);
-        void unpack(double * data, double * packed_data, int count, int block_length, int stride);
+        template<typename T>
+        void pack(T * data, T * packed_data, int count, int block_length, int stride);
+        template<typename T>
+        void unpack(T * data, T * packed_data, int count, int block_length, int stride);
+        template<typename T>
+        MPI_Datatype getMPI_Datatype();
 
     public:
 
-        int setup(MPI_Comm comm, int * global_dims, int * local_dims, int * np_dims, int ndims);
-        int gather(double * global_data, double * local_data);
-        int scatter(double * global_data, double * local_data);
-        int share(double * local_data);
+        MPIGrid();
+        ~MPIGrid();
+
+        int setup(MPI_Comm comm, int * global_dims, int * np_dims, int ndims, int nrows, int &alloc_local);
+
+        template <typename T>
+        int gather(T * global_data, T * local_data);
+
+        template <typename T>
+        int scatter(T * global_data, T * local_data);
+
+        template <typename T>
+        int share(T * local_data);
 
 };
 
-void MPIGrid :: pack(double * data, double * packed_data, int count, int block_length, int stride)
+MPIGrid :: MPIGrid()
 {
-    size_t num = block_length * sizeof(double);
+}
+
+MPIGrid :: ~MPIGrid()
+{
+    delete [] m_local_dims;
+    delete [] m_global_dims;;
+    delete [] m_np_dims;
+}
+
+template <typename T> 
+MPI_Datatype MPIGrid :: getMPI_Datatype() {}
+template <>
+MPI_Datatype MPIGrid :: getMPI_Datatype<double>() { return MPI_DOUBLE; }
+template <>
+MPI_Datatype MPIGrid :: getMPI_Datatype<int>() { return MPI_INT; }
+template <>
+MPI_Datatype MPIGrid :: getMPI_Datatype<float>() { return MPI_FLOAT; }
+
+
+template<typename T>
+void MPIGrid :: pack(T * data, T * packed_data, int count, int block_length, int stride)
+{
+    size_t num = block_length * sizeof(T);
 
     for (int i=0; i<count; i++)
     {
@@ -43,9 +76,10 @@ void MPIGrid :: pack(double * data, double * packed_data, int count, int block_l
     }
 }
 
-void MPIGrid :: unpack(double * data, double * packed_data, int count, int block_length, int stride)
+template<typename T>
+void MPIGrid :: unpack(T * data, T * packed_data, int count, int block_length, int stride)
 {
-    size_t num = block_length * sizeof(double);
+    size_t num = block_length * sizeof(T);
 
     for (int i=0; i<count; i++)
     {
@@ -56,7 +90,7 @@ void MPIGrid :: unpack(double * data, double * packed_data, int count, int block
 
 }
 
-int MPIGrid :: setup(MPI_Comm comm_old, int * global_dims, int * local_dims, int * np_dims, int ndims)
+int MPIGrid :: setup(MPI_Comm comm_old, int * global_dims, int * np_dims, int ndims, int nrows, int &alloc_local)
 {
 
     int periodic[ndims];
@@ -79,9 +113,9 @@ int MPIGrid :: setup(MPI_Comm comm_old, int * global_dims, int * local_dims, int
     for (int i=0; i<ndims; i++) 
         if (np_dims[i] < 1) return 2;
 
-    /** \error ERROR 3 the global dimensions must be >= MPIGRID_NROWS */
+    /** \error ERROR 3 the global dimensions must be >= m_nrows */
     for (int i=0; i<ndims; i++) 
-        if (global_dims[i] < MPIGRID_NROWS) return 3;
+        if (global_dims[i] < nrows) return 3;
 
 
     /** \error ERROR 4 the number of processors must divide evenly in global dims in each dimension */
@@ -101,24 +135,26 @@ int MPIGrid :: setup(MPI_Comm comm_old, int * global_dims, int * local_dims, int
     MPI_Cart_create(comm_old, ndims, np_dims, periodic, 0, &topology);
     MPI_Comm_rank(topology, &m_rank);
 
+    m_nrows = nrows;
     m_ndims = ndims;
-    m_global_dims = (int *) malloc(sizeof(int)*m_ndims);
-    m_local_dims = (int *) malloc(sizeof(int)*m_ndims);
-    m_np_dims = (int *) malloc(sizeof(int)*m_ndims);
+    m_global_dims = new int [m_ndims];
+    m_local_dims = new int [m_ndims];
+    m_np_dims = new int [m_ndims];
 
+    alloc_local = 1;
     for (int i=0; i<ndims; i++)
     {
-        local_dims[i] = global_dims[i] / np_dims[i] + MPIGRID_NROWS*2;
-
         m_global_dims[i] = global_dims[i];
-        m_local_dims[i] = local_dims[i];
         m_np_dims[i] = np_dims[i];
+        m_local_dims[i] = m_global_dims[i] / m_np_dims[i] + m_nrows*2;
+        alloc_local *= m_local_dims[i];
     }
 
     return 0;
 }
 
-int MPIGrid :: scatter(double * global_data, double * local_data)
+template <typename T>
+int MPIGrid :: scatter(T * global_data, T * local_data)
 {
 
     MPI_Request request;
@@ -146,7 +182,7 @@ int MPIGrid :: scatter(double * global_data, double * local_data)
     count = 1;
     for (int i=0; i<m_ndims-1; i++) count *= subdomain[i];
 
-    double * packed_data = (double *) malloc(sizeof(double)*subdomain_volume);
+    T * packed_data = new T [subdomain_volume];
 
     /* ============== master sends data ============= */
     if (m_rank == 0) {
@@ -172,7 +208,7 @@ int MPIGrid :: scatter(double * global_data, double * local_data)
             for (int i=0; i<m_ndims; i++) offset += coords[i] * coord_stride[i];
 
             pack(global_data+offset, packed_data, count, block_length, stride);
-            MPI_Isend(packed_data, subdomain_volume, MPI_DOUBLE, id, tag, topology, &request);
+            MPI_Isend(packed_data, subdomain_volume, getMPI_Datatype<T>(), id, tag, topology, &request);
         }
     }
 
@@ -184,21 +220,22 @@ int MPIGrid :: scatter(double * global_data, double * local_data)
         int local_stride_i = 1;
         for (int j=i+1; j<m_ndims; j++)
             local_stride_i *= m_local_dims[j];
-        offset += local_stride_i*MPIGRID_NROWS;
+        offset += local_stride_i*m_nrows;
     }
 
     block_length = subdomain[m_ndims-1];
     stride = m_local_dims[m_ndims-1];
 
-    MPI_Recv(packed_data, subdomain_volume, MPI_DOUBLE, source, tag, topology, &status);
+    MPI_Recv(packed_data, subdomain_volume, getMPI_Datatype<T>(), source, tag, topology, &status);
     unpack(local_data+offset, packed_data, count, block_length, stride);
 
-    free(packed_data);
+    delete [] packed_data;
 
     return 0;
 }
 
-int MPIGrid :: gather(double * global_data, double * local_data)
+template<typename T>
+int MPIGrid :: gather(T * global_data, T * local_data)
 {
 
     MPI_Request request;
@@ -233,14 +270,15 @@ int MPIGrid :: gather(double * global_data, double * local_data)
         int local_stride_i = 1;
         for (int j=i+1; j<m_ndims; j++)
             local_stride_i *= m_local_dims[j];
-        offset += local_stride_i*MPIGRID_NROWS;
+        offset += local_stride_i*m_nrows;
     }
 
-    double * packed_data = (double *) malloc(sizeof(double)*subdomain_volume);
+    T * packed_send = new T [subdomain_volume];
+    T * packed_recv = new T [subdomain_volume];
 
     /* ====================== EVERY PROCESS SENDS DATA ========================== */
-    pack(local_data + offset, packed_data, count, block_length, stride);
-    MPI_Isend(packed_data, subdomain_volume, MPI_DOUBLE, destination, tag, topology, &request);
+    pack(local_data + offset, packed_send, count, block_length, stride);
+    MPI_Isend(packed_send, subdomain_volume, getMPI_Datatype<T>(), destination, tag, topology, &request);
 
     /* ====================== MASTER RECEIVES DATA ========================== */
     if (m_rank == 0) {
@@ -263,8 +301,8 @@ int MPIGrid :: gather(double * global_data, double * local_data)
 
             stride = m_global_dims[m_ndims-1];
 
-            MPI_Recv(packed_data, subdomain_volume, MPI_DOUBLE, id, tag, topology, &status);
-            unpack(global_data+offset, packed_data, count, block_length, stride);
+            MPI_Recv(packed_recv, subdomain_volume, getMPI_Datatype<T>(), id, tag, topology, &status);
+            unpack(global_data+offset, packed_recv, count, block_length, stride);
         }
 
     }
@@ -272,12 +310,14 @@ int MPIGrid :: gather(double * global_data, double * local_data)
     // must wait for master to finish recieving before free'ing packaged data
     MPI_Barrier(topology);
 
-    free(packed_data);
+    delete [] packed_send;
+    delete [] packed_recv;
 
     return 0;
 }
 
-int MPIGrid :: share(double * local_data)
+template <typename T>
+int MPIGrid :: share(T * local_data)
 {
 
     for (int i=0; i<m_ndims; i++)
@@ -287,7 +327,7 @@ int MPIGrid :: share(double * local_data)
         MPI_Status status;
 
         int count = 1;
-        int block_length = MPIGRID_NROWS;
+        int block_length = m_nrows;
         int stride = 1;
         int step = 1;
 
@@ -306,44 +346,43 @@ int MPIGrid :: share(double * local_data)
         for (int j=i+1; j<m_ndims; j++)
             step *= m_local_dims[j];
 
-        double * packed_send = (double *) malloc(sizeof(double)*count*block_length);
-        double * packed_recv = (double *) malloc(sizeof(double)*count*block_length);
+        T * packed_send = new T [count*block_length];
+        T * packed_recv = new T [count*block_length];
 
         /* =========== SENDRECV POSITIVE DIRECTION =================== */
 
-        send_offset = (m_local_dims[i] - 2*MPIGRID_NROWS) * step; 
+        send_offset = (m_local_dims[i] - 2*m_nrows) * step; 
         recv_offset = 0;
 
         pack(local_data+send_offset, packed_send, count, block_length, stride);
 
         MPI_Cart_shift(topology, i, 1, &source, &destination);
 
-        MPI_Sendrecv(packed_send, count*block_length, MPI_DOUBLE, destination, tag,
-                     packed_recv, count*block_length, MPI_DOUBLE, source, tag,
+        MPI_Sendrecv(packed_send, count*block_length, getMPI_Datatype<T>(), destination, tag,
+                     packed_recv, count*block_length, getMPI_Datatype<T>(), source, tag,
                      topology, &status);
 
         unpack(local_data+recv_offset, packed_recv, count, block_length, stride);
 
         /* =========== SENDRECV NEGATIVE DIRECTION =================== */
 
-        send_offset = MPIGRID_NROWS * step; 
-        recv_offset = (m_local_dims[i] - MPIGRID_NROWS) * step;
+        send_offset = m_nrows * step; 
+        recv_offset = (m_local_dims[i] - m_nrows) * step;
 
         pack(local_data+send_offset, packed_send, count, block_length, stride);
 
         MPI_Cart_shift(topology, i, -1, &source, &destination);
 
-        MPI_Sendrecv(packed_send, count*block_length, MPI_DOUBLE, destination, tag,
-                     packed_recv, count*block_length, MPI_DOUBLE, source, tag,
+        MPI_Sendrecv(packed_send, count*block_length, getMPI_Datatype<T>(), destination, tag,
+                     packed_recv, count*block_length, getMPI_Datatype<T>(), source, tag,
                      topology, &status);
 
         unpack(local_data+recv_offset, packed_recv, count, block_length, stride);
 
-        free(packed_send);
-        free(packed_recv);
+        delete [] packed_send;
+        delete [] packed_recv;
     }
 
     return 0;
 
 }
-
