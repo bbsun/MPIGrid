@@ -3,19 +3,31 @@
 
 #include "mpi.h"
 
+/// MPIGrid is a class that enables the user to easily perform N-dimensional domain decomposition
+
+/**
+MPIGrid simplifies distributed memory parallelization for applications
+that run on rectilinear grids.
+There are four main functions (setup, scatter, share, gather) that take global system data,
+distribute it to all of the processes, share the ghost rows with neighboring processes, 
+and gather the data for output.
+The functions are written to allow decomposition along each dimensions, for systems of arbitrary dimension.
+The basic datatypes (int, float, double) are supported.
+*/
+
 class MPIGrid {
 
     private:
+                                /// m prefix indicates membor variable
+        int m_np;               /// number of processes
+        int m_rank;             /// rank of process
+        int m_ndims;            /// number of dimensions
+        int m_nrows;            /// number of ghost rows
+        int * m_local_dims;     /// dimensions of local share, with ghost rows
+        int * m_global_dims;    /// dimensions of global system
+        int * m_np_dims;        /// number of processes in each dimension
 
-        int m_np;
-        int m_rank;
-        int m_ndims;
-        int m_nrows;
-        int * m_local_dims;
-        int * m_global_dims;
-        int * m_np_dims;
-
-        MPI_Comm topology;
+        MPI_Comm topology;      /// MPI Virtual Topology
 
         template<typename T>
         void pack(T * data, T * packed_data, int count, int block_length, int stride);
@@ -93,21 +105,28 @@ void MPIGrid :: unpack(T * data, T * packed_data, int count, int block_length, i
 int MPIGrid :: setup(MPI_Comm comm_old, int * global_dims, int * np_dims, int ndims, int nrows, int &alloc_local)
 {
 
+    /// Setup a grid and store all the information needed for communication
+
+    /**
+    Setup must be called once (and only once) before any of the other class functions are called.
+    Most of the error checking happens here, so the return error value should be checked for 0 (no errors);
+    */
+
+    /**
+    @param [in] comm_old the MPI communicator (usually MPI_COMM_WORLD)
+    @param [in] global_dims extents of the global system
+    @param [in] np_dims the number of processors in each dimensions (the decomposition)
+    @param [in] ndims the number of dimensions
+    @param [in] nrows the number of ghost rows needed (1 per laplacian)
+    @param [out] alloc_local the number of elements that should be allocated for local data storage
+    */
+
     int periodic[ndims];
     int np_product;
     MPI_Comm_size(comm_old, &m_np);
 
-    /**
-    @param comm_old the MPI communicator (usually MPI_COMM_WORLD)
-    @param global_dims extents of the global system
-    @param local_dims extents of the local system
-    @param np_dims the number of processors in each dimensions (the decomposition)
-    @param ndims the number of dimensions
-    */
-
     /** \error ERROR 1 the number of dimensions must be greater than 0 */
     if (ndims < 1) return 1;
-
 
     /** \error ERROR 2 the number of processors in each dimensions must be greater than 0 */
     for (int i=0; i<ndims; i++) 
@@ -116,7 +135,6 @@ int MPIGrid :: setup(MPI_Comm comm_old, int * global_dims, int * np_dims, int nd
     /** \error ERROR 3 the global dimensions must be >= m_nrows */
     for (int i=0; i<ndims; i++) 
         if (global_dims[i] < nrows) return 3;
-
 
     /** \error ERROR 4 the number of processors must divide evenly in global dims in each dimension */
     for (int i=0; i<ndims; i++) 
@@ -156,6 +174,20 @@ int MPIGrid :: setup(MPI_Comm comm_old, int * global_dims, int * np_dims, int nd
 template <typename T>
 int MPIGrid :: scatter(T * global_data, T * local_data)
 {
+
+    /// Send the global data on the master process to the local data for each process
+
+    /**
+    All processes should call this function. 
+    Only the master process needs to have allocated resources for global_data
+    The contents of global_data will be scattered to local_data, so local_data does not need to be initialized.
+    Supported data types are int, float, and double.
+    */
+
+    /**
+    @param [in] global_data pointer to the first element of the global data on the master process
+    @param [out] local_data pointer to the first element of the local data on each process
+    */
 
     MPI_Request request;
     MPI_Status status;
@@ -238,6 +270,19 @@ template<typename T>
 int MPIGrid :: gather(T * global_data, T * local_data)
 {
 
+    /// Collect the local data from each local process onto the master process
+
+    /**
+    All processes should call this function. 
+    Only the master process needs to have allocated resources for global_data
+    Supported data types are int, float, and double.
+    */
+
+    /**
+    @param [out] global_data pointer to first element of global data on master process
+    @param [in] local_data pointer to the first element of local data on each process.
+    */
+
     MPI_Request request;
     MPI_Status status;
 
@@ -319,6 +364,17 @@ int MPIGrid :: gather(T * global_data, T * local_data)
 template <typename T>
 int MPIGrid :: share(T * local_data)
 {
+
+    /// This function communicates ghost rows to neighboring processes
+    
+    /**
+    Each process calls this function.
+    All of the ghost row information is shared, the number of rows was indicated at setup.
+    */
+
+    /**
+    @param [in,out] local_data pointer to the first element of the local data
+    */
 
     for (int i=0; i<m_ndims; i++)
     {
