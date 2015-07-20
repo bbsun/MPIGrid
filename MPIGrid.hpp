@@ -30,9 +30,9 @@ class MPIGrid {
         MPI_Comm topology;      /// MPI Virtual Topology
 
         template<typename T>
-        void pack(T * data, T * packed_data, int count, int block_length, int stride);
+        void pack(T const * const __restrict__ data, T * const __restrict__ packed_data, int count, int block_length, int stride);
         template<typename T>
-        void unpack(T * data, T * packed_data, int count, int block_length, int stride);
+        void unpack(T * const __restrict__ data, T const * const __restrict__ packed_data, int count, int block_length, int stride);
         template<typename T>
         MPI_Datatype getMPI_Datatype();
 
@@ -41,16 +41,16 @@ class MPIGrid {
         MPIGrid();
         ~MPIGrid();
 
-        int setup(MPI_Comm comm, int * global_dims, int * np_dims, int ndims, int nrows, int &alloc_local);
+        int setup(MPI_Comm comm, int const * const global_dims, int const * const np_dims, int ndims, int nrows, int &alloc_local);
 
         template <typename T>
-        int gather(T * global_data, T * local_data);
+        int scatter(T const * const __restrict__ global_data, T * const __restrict__ local_data);
 
         template <typename T>
-        int scatter(T * global_data, T * local_data);
+        int gather(T * const __restrict__ global_data, T const * const __restrict__ local_data);
 
         template <typename T>
-        int share(T * local_data);
+        int share(T * const local_data);
 
 };
 
@@ -76,7 +76,7 @@ MPI_Datatype MPIGrid :: getMPI_Datatype<float>() { return MPI_FLOAT; }
 
 
 template<typename T>
-void MPIGrid :: pack(T * data, T * packed_data, int count, int block_length, int stride)
+void MPIGrid :: pack(T const * const __restrict__ data, T * const __restrict__ packed_data, int count, int block_length, int stride)
 {
     size_t num = block_length * sizeof(T);
 
@@ -89,7 +89,7 @@ void MPIGrid :: pack(T * data, T * packed_data, int count, int block_length, int
 }
 
 template<typename T>
-void MPIGrid :: unpack(T * data, T * packed_data, int count, int block_length, int stride)
+void MPIGrid :: unpack(T * const __restrict__ data, T const * const __restrict__ packed_data, int count, int block_length, int stride)
 {
     size_t num = block_length * sizeof(T);
 
@@ -102,7 +102,7 @@ void MPIGrid :: unpack(T * data, T * packed_data, int count, int block_length, i
 
 }
 
-int MPIGrid :: setup(MPI_Comm comm_old, int * global_dims, int * np_dims, int ndims, int nrows, int &alloc_local)
+int MPIGrid :: setup(MPI_Comm comm_old, int const * const global_dims, int const * const np_dims, int ndims, int nrows, int &alloc_local)
 {
 
     /// Setup a grid and store all the information needed for communication
@@ -172,7 +172,7 @@ int MPIGrid :: setup(MPI_Comm comm_old, int * global_dims, int * np_dims, int nd
 }
 
 template <typename T>
-int MPIGrid :: scatter(T * global_data, T * local_data)
+int MPIGrid :: scatter(T const * const __restrict__ global_data, T * const __restrict__ local_data)
 {
 
     /// Send the global data on the master process to the local data for each process
@@ -267,7 +267,7 @@ int MPIGrid :: scatter(T * global_data, T * local_data)
 }
 
 template<typename T>
-int MPIGrid :: gather(T * global_data, T * local_data)
+int MPIGrid :: gather(T * const __restrict__ global_data, T const * const __restrict__ local_data)
 {
 
     /// Collect the local data from each local process onto the master process
@@ -362,7 +362,7 @@ int MPIGrid :: gather(T * global_data, T * local_data)
 }
 
 template <typename T>
-int MPIGrid :: share(T * local_data)
+int MPIGrid :: share(T * const local_data)
 {
 
     /// This function communicates ghost rows to neighboring processes
