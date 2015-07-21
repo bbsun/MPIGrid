@@ -41,7 +41,7 @@ class MPIGrid {
         MPIGrid();
         ~MPIGrid();
 
-        int setup(MPI_Comm comm, int const * const global_dims, int const * const np_dims, int ndims, int nrows, int &alloc_local);
+        int setup(MPI_Comm comm, int const * const global_dims, int const * const np_dims, int ndims, int nrows, int * const local_dims);
 
         template <typename T>
         int scatter(T const * const __restrict__ global_data, T * const __restrict__ local_data);
@@ -102,7 +102,7 @@ void MPIGrid :: unpack(T * const __restrict__ data, T const * const __restrict__
 
 }
 
-int MPIGrid :: setup(MPI_Comm comm_old, int const * const global_dims, int const * const np_dims, int ndims, int nrows, int &alloc_local)
+int MPIGrid :: setup(MPI_Comm comm_old, int const * const global_dims, int const * const np_dims, int ndims, int nrows, int * const local_dims)
 {
 
     /// Setup a grid and store all the information needed for communication
@@ -110,6 +110,7 @@ int MPIGrid :: setup(MPI_Comm comm_old, int const * const global_dims, int const
     /**
     Setup must be called once (and only once) before any of the other class functions are called.
     Most of the error checking happens here, so the return error value should be checked for 0 (no errors);
+    global_dims and local_dims must already be allocated with ndims elements
     */
 
     /**
@@ -118,7 +119,7 @@ int MPIGrid :: setup(MPI_Comm comm_old, int const * const global_dims, int const
     @param [in] np_dims the number of processors in each dimensions (the decomposition)
     @param [in] ndims the number of dimensions
     @param [in] nrows the number of ghost rows needed (1 per laplacian)
-    @param [out] alloc_local the number of elements that should be allocated for local data storage
+    @param [out] local_dims dimensions of local data 
     */
 
     int periodic[ndims];
@@ -159,13 +160,12 @@ int MPIGrid :: setup(MPI_Comm comm_old, int const * const global_dims, int const
     m_local_dims = new int [m_ndims];
     m_np_dims = new int [m_ndims];
 
-    alloc_local = 1;
     for (int i=0; i<ndims; i++)
     {
         m_global_dims[i] = global_dims[i];
         m_np_dims[i] = np_dims[i];
         m_local_dims[i] = m_global_dims[i] / m_np_dims[i] + m_nrows*2;
-        alloc_local *= m_local_dims[i];
+        local_dims[i] = m_local_dims[i];
     }
 
     return 0;
