@@ -6,23 +6,52 @@
 #include <iomanip>
 
 
-void print_grid(double * data, int * dims)
+void print_local_grid_2d(double * data, int * dims, int nrows)
 {
+    int rank;
+    int np;
+    MPI_Status status;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &np);
+
+    if (rank != 0) 
+        MPI_Recv(NULL, 0, MPI_INT, rank-1, 1, MPI_COMM_WORLD, &status);
+
     for (int i=0; i<dims[0]; i++)
     {
-        if (i==1 || i== dims[0]-1 ) 
+        if (i==nrows || i== dims[0]-nrows ) 
             for (int j=0; j<dims[1]; j++)
                 std::cout << std::setw(4) << "----" << " ";
         std::cout << std::endl;
 
         for (int j=0; j<dims[1]; j++)
         {
-            if (j==1 || j==dims[1]-1) std::cout << "|";
+            if (j==nrows || j==dims[1]-nrows) std::cout << "|";
             else std::cout << " ";
             int ind = i*dims[1] + j;
             std::cout << std::setw(3) << data[ind] << " ";
         }
         std::cout << std::endl;
+    }
+
+    if (rank != np-1) 
+        MPI_Send(NULL, 0, MPI_INT, rank+1, 1, MPI_COMM_WORLD);
+}
+
+void print_local_grid_3d(double * data, int * dims, int nrows)
+{
+    for (int i=0; i<dims[0]; i++)
+    {
+        std::cout << "i = " << i << std::endl;
+        for (int j=0; j<dims[1]; j++)
+        {
+            for (int k=0; k<dims[2]; k++)
+            {
+                int ind = i*dims[1]*dims[2] + j*dims[2] + k;
+                std::cout << std::setw(3) << data[ind] << " ";
+            }
+            std::cout << std::endl;
+        }
     }
 }
 
@@ -168,6 +197,107 @@ TEST(MPIGridTest, Scatter_2D)
     free(local_data);
 
 }
+
+TEST(MPIGridTest, TwoGhostRows)
+{
+    int ndims = 2;
+    int global_dims[ndims];
+    int local_dims[ndims];
+    int np_dims[ndims];
+
+    int rank;
+    int np;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &np);
+    global_dims[0] = 10;
+    global_dims[1] = 10;
+    np_dims[0] = 2;
+    np_dims[1] = 2;
+
+    MPIGrid grid;
+    int err = grid.setup(MPI_COMM_WORLD, global_dims, np_dims, ndims, 2, local_dims);
+    ASSERT_EQ(err, 0);
+
+    double * global_data = (double *) malloc(sizeof(double)*global_dims[0]*global_dims[1]);
+    double * local_data = (double *) malloc(sizeof(double)*local_dims[0]*local_dims[1]);
+    double * gathered_data = (double *) malloc(sizeof(double)*global_dims[0]*global_dims[1]);
+
+    if (rank==0)
+    for (int i=0; i<global_dims[0]*global_dims[1]; i++) global_data[i] = i+1;
+
+    for (int i=0; i<local_dims[0]*local_dims[1]; i++) local_data[i] = -1;
+
+    err = grid.scatter(global_data, local_data);
+    ASSERT_EQ(err, 0);
+    grid.share(local_data);
+
+    err = grid.gather(gathered_data, local_data);
+    ASSERT_EQ(err, 0);
+
+    if (rank == 0) {
+        for (int i=0; i<global_dims[0]*global_dims[1]; i++)
+            EXPECT_EQ(global_data[i], gathered_data[i]);
+    }
+
+
+    free(global_data);
+    free(local_data);
+    free(gathered_data);
+}
+
+TEST(MPIGridTest, 3D)
+{
+    int ndims = 3;
+    int global_dims[ndims];
+    int local_dims[ndims];
+    int np_dims[ndims];
+
+    int rank;
+    int np;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &np);
+    global_dims[0] = 10;
+    global_dims[1] = 10;
+    global_dims[2] = 10;
+    np_dims[0] = 2;
+    np_dims[1] = 2;
+    np_dims[2] = 1;
+
+    MPIGrid grid;
+    int err = grid.setup(MPI_COMM_WORLD, global_dims, np_dims, ndims, 2, local_dims);
+    ASSERT_EQ(err, 0);
+
+    double * global_data = (double *) malloc(sizeof(double)*global_dims[0]*global_dims[1]*global_dims[2]);
+    double * local_data = (double *) malloc(sizeof(double)*local_dims[0]*local_dims[1]*local_dims[2]);
+    double * gathered_data = (double *) malloc(sizeof(double)*global_dims[0]*global_dims[1]*global_dims[2]);
+
+    if (rank==0)
+    for (int i=0; i<global_dims[0]*global_dims[1]*global_dims[2]; i++) global_data[i] = i+1;
+
+    for (int i=0; i<local_dims[0]*local_dims[1]*local_dims[2]; i++) local_data[i] = -1;
+
+    err = grid.scatter(global_data, local_data);
+    ASSERT_EQ(err, 0);
+
+    grid.share(local_data);
+    //if (rank==0) print_local_grid_3d(local_data, local_dims, 2);
+
+    err = grid.gather(gathered_data, local_data);
+    ASSERT_EQ(err, 0);
+
+
+    if (rank == 0) {
+        for (int i=0; i<global_dims[0]*global_dims[1]*global_dims[2]; i++)
+            EXPECT_EQ(global_data[i], gathered_data[i]);
+    }
+
+
+    free(global_data);
+    free(local_data);
+    free(gathered_data);
+}
+
+
 
 int main(int argc, char ** argv)
 {
