@@ -5,8 +5,6 @@
 #include "assert.h"
 #include <iomanip>
 
-#include "log.h"
-
 
 void print_local_grid_2d(double * data, int * dims, int nrows)
 {
@@ -359,8 +357,6 @@ int main(int argc, char ** argv)
     ::testing::InitGoogleTest(&argc, argv);
 //    ::testing::GTEST_FLAG(filter) = "MPIGridTest.MultipleFields";
     MPI_Init(&argc, &argv);
-    FILE * logFile = fopen("log.txt", "w");
-    Output2FILE::Stream() = logFile;
     int result = RUN_ALL_TESTS();
     MPI_Finalize();
     return result;
