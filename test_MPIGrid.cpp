@@ -312,13 +312,13 @@ TEST(MPIGridTest, MultipleFields)
 
     int rank;
     int np;
-    int nphases = 1;
+    int nphases = 2;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &np);
-    global_dims[0] = 256;
-    global_dims[1] = 256;
-    np_dims[0] = 4;
-    np_dims[1] = 1;
+    global_dims[0] = 12;
+    global_dims[1] = 10;
+    np_dims[0] = 2;
+    np_dims[1] = 2;
 
     MPIGrid grid;
     int err = grid.setup(MPI_COMM_WORLD, global_dims, np_dims, ndims, 2, local_dims);
@@ -336,7 +336,10 @@ TEST(MPIGridTest, MultipleFields)
     for (int i=0; i<nphases; i++)
         grid.scatter(global_data + i*global_dims[0]*global_dims[1], local_data + i*local_dims[0]*local_dims[1]);
 
-    //print_local_grid_2d(local_data, local_dims, 2);
+    grid.share(local_data, nphases);
+
+    print_local_grid_2d(local_data, local_dims, 2);
+    print_local_grid_2d(local_data+local_dims[0]*local_dims[1], local_dims, 2);
 
     for (int i=0; i<nphases; i++)
         grid.gather(gathered_data + i*global_dims[0]*global_dims[1], local_data + i*local_dims[0]*local_dims[1]);
@@ -355,7 +358,7 @@ int main(int argc, char ** argv)
 {
 
     ::testing::InitGoogleTest(&argc, argv);
-//    ::testing::GTEST_FLAG(filter) = "MPIGridTest.MultipleFields";
+    ::testing::GTEST_FLAG(filter) = "MPIGridTest.MultipleFields";
     MPI_Init(&argc, &argv);
     int result = RUN_ALL_TESTS();
     MPI_Finalize();
