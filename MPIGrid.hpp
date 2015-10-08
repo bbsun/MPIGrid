@@ -64,7 +64,7 @@ template<typename T>
 void MPIGrid :: pack_data(T const * const data, T * const pack, int * count, int * block_length, int * stride, int ndims)
 {
     if (ndims == 1) {
-        memcpy(pack, data, count[0]*sizeof(double));
+        memcpy(pack, data, count[0]*sizeof(T));
         return;
     }
 
@@ -76,7 +76,7 @@ template<typename T>
 void MPIGrid :: unpack_data(T * const data, T const * const pack, int * count, int * block_length, int * stride, int ndims)
 {
     if (ndims == 1) {
-        memcpy(data, pack, count[0]*sizeof(double));
+        memcpy(data, pack, count[0]*sizeof(T));
         return;
     }
 

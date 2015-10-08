@@ -338,8 +338,8 @@ TEST(MPIGridTest, MultipleFields)
 
     grid.share(local_data, nphases);
 
-    print_local_grid_2d(local_data, local_dims, 2);
-    print_local_grid_2d(local_data+local_dims[0]*local_dims[1], local_dims, 2);
+   // print_local_grid_2d(local_data, local_dims, 2);
+    //print_local_grid_2d(local_data+local_dims[0]*local_dims[1], local_dims, 2);
 
     for (int i=0; i<nphases; i++)
         grid.gather(gathered_data + i*global_dims[0]*global_dims[1], local_data + i*local_dims[0]*local_dims[1]);
@@ -358,7 +358,7 @@ int main(int argc, char ** argv)
 {
 
     ::testing::InitGoogleTest(&argc, argv);
-    ::testing::GTEST_FLAG(filter) = "MPIGridTest.MultipleFields";
+//    ::testing::GTEST_FLAG(filter) = "MPIGridTest.MultipleFields";
     MPI_Init(&argc, &argv);
     int result = RUN_ALL_TESTS();
     MPI_Finalize();
