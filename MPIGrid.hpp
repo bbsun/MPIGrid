@@ -5,17 +5,19 @@
 
 #include <fstream>
 
+///
 /// MPIGrid is a class that enables the user to easily perform N-dimensional domain decomposition
+///
 
-/**
-MPIGrid simplifies distributed memory parallelization for applications
-that run on rectilinear grids.
-There are four main functions (setup, scatter, share, gather) that take global system data,
-distribute it to all of the processes, share the ghost rows with neighboring processes, 
-and gather the data for output.
-The functions are written to allow decomposition along each dimensions, for systems of arbitrary dimension.
-The basic datatypes (int, float, double) are supported.
-*/
+///
+/// MPIGrid simplifies distributed memory parallelization for applications
+/// that run on rectilinear grids.
+/// There are four main functions (setup, scatter, share, gather) that take global system data,
+/// distribute it to all of the processes, share the ghost rows with neighboring processes, 
+/// and gather the data for output.
+/// The functions are written to allow decomposition along each dimensions, for systems of arbitrary dimension.
+/// The basic datatypes (int, float, double) are supported.
+///
 
 class MPIGrid {
 
@@ -60,6 +62,20 @@ class MPIGrid {
 
 };
 
+MPIGrid :: MPIGrid()
+{
+    m_local_dims = NULL;
+    m_global_dims = NULL;
+    m_np_dims = NULL;
+}
+
+MPIGrid :: ~MPIGrid()
+{
+    delete [] m_local_dims;
+    delete [] m_global_dims;;
+    delete [] m_np_dims;
+}
+
 template<typename T>
 void MPIGrid :: pack_data(T const * const data, T * const pack, int * count, int * block_length, int * stride, int ndims)
 {
@@ -84,23 +100,6 @@ void MPIGrid :: unpack_data(T * const data, T const * const pack, int * count, i
         unpack_data(data+stride[0]*i, pack+block_length[0]*i, count+1, block_length+1, stride+1, ndims-1);
 }
 
-
-MPIGrid :: MPIGrid()
-{
-    m_local_dims = NULL;
-    m_global_dims = NULL;
-    m_np_dims = NULL;
-}
-
-MPIGrid :: ~MPIGrid()
-{
-    if (m_np_dims != NULL) {
-        delete [] m_local_dims;
-        delete [] m_global_dims;;
-        delete [] m_np_dims;
-    }
-}
-
 template <typename T> 
 MPI_Datatype MPIGrid :: getMPI_Datatype() {}
 template <>
@@ -116,11 +115,11 @@ int MPIGrid :: setup(MPI_Comm comm_old, int const * const global_dims, int * np_
 
     /// Setup a grid and store all the information needed for communication
 
-    /**
-    Setup must be called once (and only once) before any of the other class functions are called.
-    Most of the error checking happens here, so the return error value should be checked for 0 (no errors);
-    global_dims and local_dims must already be allocated with ndims elements
-    */
+    ///
+    /// Setup must be called once (and only once) before any of the other class functions are called.
+    /// Most of the error checking happens here, so the return error value should be checked for 0 (no errors);
+    /// global_dims and local_dims must already be allocated with ndims elements
+    /// 
 
     /**
     @param [in] comm_old the MPI communicator (usually MPI_COMM_WORLD)
@@ -135,22 +134,22 @@ int MPIGrid :: setup(MPI_Comm comm_old, int const * const global_dims, int * np_
     int np_product;
     MPI_Comm_size(comm_old, &m_np);
 
-    /** \error ERROR 1 the number of dimensions must be greater than 0 */
+    /// \error ERROR 1 the number of dimensions must be greater than 0 
     if (ndims < 1) return 1;
 
-    /** \error ERROR 2 the number of processors in each dimensions must be greater than 0 */
+    /// \error ERROR 2 the number of processors in each dimensions must be greater than 0
     for (int i=0; i<ndims; i++) 
         if (np_dims[i] < 1) return 2;
 
-    /** \error ERROR 3 the global dimensions must be >= m_nrows */
+    /// \error ERROR 3 the global dimensions must be >= m_nrows 
     for (int i=0; i<ndims; i++) 
         if (global_dims[i] < nrows) return 3;
 
-    /** \error ERROR 4 the number of processors must divide evenly in global dims in each dimension */
+    /// \error ERROR 4 the number of processors must divide evenly in global dims in each dimension 
     for (int i=0; i<ndims; i++) 
         if (global_dims[i] % np_dims[i] != 0) return 4;
 
-    /** \error ERROR 5 the number of processors in each dimension must equal the total number of processors */
+    /// \error ERROR 5 the number of processors in each dimension must equal the total number of processors
     np_product = 1;
     for (int i=0; i<ndims; i++) 
         np_product *= np_dims[i];
@@ -186,17 +185,15 @@ int MPIGrid :: scatter(T const * const __restrict__ global_data, T * const __res
 
     /// Send the global data on the master process to the local data for each process
 
-    /**
-    All processes should call this function. 
-    Only the master process needs to have allocated resources for global_data
-    The contents of global_data will be scattered to local_data, so local_data does not need to be initialized.
-    Supported data types are int, float, and double.
-    */
+    ///
+    /// All processes should call this function. 
+    /// Only the master process needs to have allocated resources for global_data
+    /// The contents of global_data will be scattered to local_data, so local_data does not need to be initialized.
+    /// Supported data types are int, float, and double.
+    ///
 
-    /**
-    @param [in] global_data pointer to the first element of the global data on the master process
-    @param [out] local_data pointer to the first element of the local data on each process
-    */
+    /// @param [in] global_data pointer to the first element of the global data on the master process
+    /// @param [out] local_data pointer to the first element of the local data on each process
 
     MPI_Request request;
     MPI_Status status;
@@ -226,7 +223,7 @@ int MPIGrid :: scatter(T const * const __restrict__ global_data, T * const __res
     T * packed_send;
     T * packed_recv = new T [subdomain_volume];
 
-    /* ============== master sends data ============= */
+    // ============== master sends data ============= 
     if (m_rank == 0) {
 
         int coord_stride[m_ndims];
@@ -260,7 +257,7 @@ int MPIGrid :: scatter(T const * const __restrict__ global_data, T * const __res
         }
     }
 
-    /* ============== everyone receives data ============= */
+    // ============== everyone receives data ============= 
 
     offset = 0;
     for (int i=0; i<m_ndims; i++)
@@ -296,16 +293,14 @@ int MPIGrid :: gather(T * const __restrict__ global_data, T const * const __rest
 
     /// Collect the local data from each local process onto the master process
 
-    /**
-    All processes should call this function. 
-    Only the master process needs to have allocated resources for global_data
-    Supported data types are int, float, and double.
-    */
+    ///
+    /// All processes should call this function. 
+    /// Only the master process needs to have allocated resources for global_data
+    /// Supported data types are int, float, and double.
+    ///
 
-    /**
-    @param [out] global_data pointer to first element of global data on master process
-    @param [in] local_data pointer to the first element of local data on each process.
-    */
+    /// @param [out] global_data pointer to first element of global data on master process
+    /// @param [in] local_data pointer to the first element of local data on each process.
 
     MPI_Request request;
     MPI_Status status;
@@ -352,11 +347,11 @@ int MPIGrid :: gather(T * const __restrict__ global_data, T const * const __rest
     T * packed_send = new T [subdomain_volume];
     T * packed_recv = new T [subdomain_volume];
 
-    /* ====================== EVERY PROCESS SENDS DATA ========================== */
+    // ====================== EVERY PROCESS SENDS DATA ========================== 
     pack_data(local_data + offset, packed_send, count, block_length, stride, m_ndims);
     MPI_Isend(packed_send, subdomain_volume, getMPI_Datatype<T>(), destination, tag, topology, &request);
 
-    /* ====================== MASTER RECEIVES DATA ========================== */
+    // ====================== MASTER RECEIVES DATA ========================== 
     if (m_rank == 0) {
 
         int coord_stride[m_ndims];
@@ -403,14 +398,12 @@ int MPIGrid :: share(T * const local_data)
 
     /// This function communicates ghost rows to neighboring processes
     
-    /**
-    Each process calls this function.
-    All of the ghost row information is shared, the number of rows was indicated at setup.
-    */
+    ///
+    /// Each process calls this function.
+    /// All of the ghost row information is shared, the number of rows was indicated at setup.
+    ///
 
-    /**
-    @param [in,out] local_data pointer to the first element of the local data
-    */
+    /// @param [in,out] local_data pointer to the first element of the local data
 
     for (int i=0; i<m_ndims; i++)
     {
@@ -441,7 +434,7 @@ int MPIGrid :: share(T * const local_data)
         T * packed_send = new T [count*block_length];
         T * packed_recv = new T [count*block_length];
 
-        /* =========== SENDRECV POSITIVE DIRECTION =================== */
+        // =========== SENDRECV POSITIVE DIRECTION =================== 
 
         send_offset = (m_local_dims[i] - 2*m_nrows) * step; 
         recv_offset = 0;
@@ -460,7 +453,7 @@ int MPIGrid :: share(T * const local_data)
         for (int j=0; j<count; j++)
             memcpy(local_data+recv_offset+stride*j, packed_recv+block_length*j, block_length*sizeof(T));
 
-        /* =========== SENDRECV NEGATIVE DIRECTION =================== */
+        // =========== SENDRECV NEGATIVE DIRECTION ===================
 
         send_offset = m_nrows * step; 
         recv_offset = (m_local_dims[i] - m_nrows) * step;
@@ -493,14 +486,12 @@ int MPIGrid :: share(T * const local_data, int nfields)
 
     /// This function communicates ghost rows to neighboring processes
     
-    /**
-    Each process calls this function.
-    All of the ghost row information is shared, the number of rows was indicated at setup.
-    */
+    /// 
+    /// Each process calls this function.
+    /// All of the ghost row information is shared, the number of rows was indicated at setup.
+    /// 
 
-    /**
-    @param [in,out] local_data pointer to the first element of the local data
-    */
+    /// @param [in,out] local_data pointer to the first element of the local data
 
     for (int i=0; i<m_ndims; i++)
     {
@@ -535,7 +526,7 @@ int MPIGrid :: share(T * const local_data, int nfields)
         T * packed_send = new T [count*block_length*nfields];
         T * packed_recv = new T [count*block_length*nfields];
 
-        /* =========== SENDRECV POSITIVE DIRECTION =================== */
+        // =========== SENDRECV POSITIVE DIRECTION =================== 
 
         send_offset = (m_local_dims[i] - 2*m_nrows) * step; 
         recv_offset = 0;
@@ -560,7 +551,7 @@ int MPIGrid :: share(T * const local_data, int nfields)
                    packed_recv+block_length*j+count*block_length*f,
                    block_length*sizeof(T));
 
-        /* =========== SENDRECV NEGATIVE DIRECTION =================== */
+        // =========== SENDRECV NEGATIVE DIRECTION ==================
 
         send_offset = m_nrows * step; 
         recv_offset = (m_local_dims[i] - m_nrows) * step;
